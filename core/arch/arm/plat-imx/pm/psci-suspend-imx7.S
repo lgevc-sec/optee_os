@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright 2017 NXP
+ *
  */
 
 #include <arm.h>
 #include <arm32_macros.S>
 #include <asm.S>
-#include <generated/imx_pm_asm_defines.h>
+#include <imx_pm.h>
 #include <imx-regs.h>
 #include <kernel/cache_helpers.h>
 #include <kernel/tz_proc_def.h>
@@ -90,7 +91,7 @@
 	/* Flush the BTAC. */
 	write_bpiallis
 
-	ldr	r6, =iram_tbl_phys_addr
+	ldr	r6, =iram_tlb_phys_addr
 	ldr	r6, [r6]
 	dsb
 	isb

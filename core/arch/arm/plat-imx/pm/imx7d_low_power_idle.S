@@ -1,27 +1,54 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright 2018 NXP
+ * Copyright 2017 NXP
+ *
  */
 
 #include <kernel/unwind.h>
 #include <asm.S>
 #include <arm.h>
 #include <arm32_macros.S>
-#include <generated/imx_pm_asm_defines.h>
+#include <imx_pm.h>
 #include <imx-regs.h>
 #include <platform_config.h>
 #include <kernel/cache_helpers.h>
 #include <kernel/tz_ssvce_def.h>
 #include <kernel/tz_proc_def.h>
 
-#define MX7_SRC_GPR1	0x74
-#define MX7_SRC_GPR2	0x78
-#define MX7_SRC_GPR3	0x7c
-#define MX7_SRC_GPR4	0x80
-#define MX7_GPC_IMR1	0x30
-#define MX7_GPC_IMR2	0x34
-#define MX7_GPC_IMR3	0x38
-#define MX7_GPC_IMR4	0x3c
+#define PM_INFO_VBASE_OFFSET			0x0
+#define PM_INFO_PBASE_OFFSET			0x4
+#define PM_INFO_RESUME_ADDR_OFFSET		0x8
+#define PM_INFO_PM_INFO_SIZE_OFFSET		0xc
+#define PM_INFO_PM_INFO_TTBR0_OFFSET		0x10
+#define PM_INFO_PM_INFO_TTBR1_OFFSET		0x14
+#define PM_INFO_PM_INFO_NUM_ONLINE_CPUS_OFFSET	0x18
+#define PM_INFO_PM_INFO_NUM_LPI_CPUS_OFFSET	0x1C
+#define PM_INFO_VAL_OFFSET			0x20
+#define PM_INFO_FLAG0_OFFSET			0x24
+#define PM_INFO_FLAG1_OFFSET			0x28
+#define PM_INFO_MX7D_DDRC_P_OFFSET		0x2C
+#define PM_INFO_MX7D_DDRC_V_OFFSET		0x30
+#define PM_INFO_MX7D_CCM_P_OFFSET		0x34
+#define PM_INFO_MX7D_CCM_V_OFFSET		0x38
+#define PM_INFO_MX7D_ANATOP_P_OFFSET		0x3C
+#define PM_INFO_MX7D_ANATOP_V_OFFSET		0x40
+#define PM_INFO_MX7D_SRC_P_OFFSET		0x44
+#define PM_INFO_MX7D_SRC_V_OFFSET		0x48
+#define PM_INFO_MX7D_IOMUXC_GPR_P_OFFSET	0x4C
+#define PM_INFO_MX7D_IOMUXC_GPR_V_OFFSET	0x50
+#define PM_INFO_MX7D_GPC_P_OFFSET		0x54
+#define PM_INFO_MX7D_GPC_V_OFFSET		0x58
+#define PM_INFO_MX7D_GIC_DIST_P_OFFSET		0x5C
+#define PM_INFO_MX7D_GIC_DIST_V_OFFSET		0x60
+
+#define MX7D_SRC_GPR1	0x74
+#define MX7D_SRC_GPR2	0x78
+#define MX7D_SRC_GPR3	0x7c
+#define MX7D_SRC_GPR4	0x80
+#define MX7D_GPC_IMR1	0x30
+#define MX7D_GPC_IMR2	0x34
+#define MX7D_GPC_IMR3	0x38
+#define MX7D_GPC_IMR4	0x3c
 #define DDRC_STAT	0x4
 #define DDRC_PWRCTL	0x30
 #define DDRC_DBG1	0x304
@@ -30,7 +57,6 @@
 #define DDRC_PCTRL_0	0x490
 
 	.section .text.psci.cpuidle
-	.align 3
 /*
  * imx_pen_lock
  *
@@ -49,14 +75,14 @@
 	.macro	imx_pen_lock
 
 	mov	r8, r0
-	read_mpidr r5
+	mrc	p15, 0, r5, c0, c0, 5
 	and	r5, r5, #3
-	add	r6, r8, #PM_INFO_MX7_VAL_OFF
+	add	r6, r8, #PM_INFO_VAL_OFFSET
 	cmp	r5, #0
-	addeq	r7, r8, #PM_INFO_MX7_FLAG0_OFF
-	addeq	r8, r8, #PM_INFO_MX7_FLAG1_OFF
-	addne	r7, r8, #PM_INFO_MX7_FLAG1_OFF
-	addne	r8, r8, #PM_INFO_MX7_FLAG0_OFF
+	addeq	r7, r8, #PM_INFO_FLAG0_OFFSET
+	addeq	r8, r8, #PM_INFO_FLAG1_OFFSET
+	addne	r7, r8, #PM_INFO_FLAG1_OFFSET
+	addne	r8, r8, #PM_INFO_FLAG0_OFFSET
 
 	mov	r9, #1
 	str	r9, [r7]
@@ -75,11 +101,11 @@
 	.macro	imx_pen_unlock
 
 	dsb
-	read_mpidr r6
+	mrc	p15, 0, r6, c0, c0, 5
 	and	r6, r6, #3
 	cmp	r6, #0
-	addeq	r7, r0, #PM_INFO_MX7_FLAG0_OFF
-	addne	r7, r0, #PM_INFO_MX7_FLAG1_OFF
+	addeq	r7, r0, #PM_INFO_FLAG0_OFFSET
+	addne	r7, r0, #PM_INFO_FLAG1_OFFSET
 	mov	r9, #0
 	str	r9, [r7]
 
@@ -90,29 +116,32 @@
 	push	{r0 - r12, lr}
 	mov	r0, #DCACHE_OP_CLEAN_INV
 	ldr	r1, =dcache_op_all
-	blx	r1
+	mov	lr, pc
+	bx	r1
 	pop	{r0 - r12, lr}
 
 	/* disable d-cache */
-	read_sctlr r7
-	bic	r7, r7, #SCTLR_C
-	write_sctlr r7
+	mrc	p15, 0, r7, c1, c0, 0
+	bic	r7, r7, #(1 << 2)
+	mcr	p15, 0, r7, c1, c0, 0
 	dsb
 	isb
 
 	push	{r0 - r12, lr}
 	mov	r0, #DCACHE_OP_CLEAN_INV
 	ldr	r1, =dcache_op_all
-	blx	r1
+	mov	lr, pc
+	bx	r1
 	pop	{r0 - r12, lr}
 
-	/* TODO: handle non-SMP kernel */
+	/* Note: How to handle non-SMP kernel? */
 	clrex
 
 	/* Turn off SMP bit. */
-	read_actlr r8
-	bic	r8, r8, #ACTLR_SMP
-	write_actlr r8
+	mrc	p15, 0, r8, c1, c0, 1
+	bic	r8, r8, #0x40
+	mcr	p15, 0, r8, c1, c0, 1
+
 	isb
 	dsb
 
@@ -122,10 +151,10 @@
 
 	/* save ttbr */
 	read_ttbr1 r7
-	str	r7, [r0, #PM_INFO_MX7_TTBR1_OFF]
+	str	r7, [r0, #PM_INFO_PM_INFO_TTBR1_OFFSET]
 
 	read_ttbr0 r7
-	str	r7, [r0, #PM_INFO_MX7_TTBR0_OFF]
+	str	r7, [r0, #PM_INFO_PM_INFO_TTBR0_OFFSET]
 
 	/*
 	 * To ensure no page table walks occur in DDR, we
@@ -136,17 +165,20 @@
 	 * 1. Flush the Branch Target Address Cache (BTAC)
 	 * 2. Set TTBR1 to point to IRAM page table.
 	 * 3. Disable page table walks in TTBR0 (PD0 = 1)
+	 * 4. Set TTBR0.N=1, implying 0-2G is translated by TTBR0
+	 *     and 2-4G is translated by TTBR1.
 	 */
 
 	/* Disable Branch Prediction, Z bit in SCTLR. */
-	read_sctlr r6
-	bic	r6, r6, #SCTLR_Z
-	write_sctlr r6
+	mrc	p15, 0, r6, c1, c0, 0
+	bic	r6, r6, #0x800
+	mcr	p15, 0, r6, c1, c0, 0
 
 	/* Flush the BTAC. */
-	write_bpiallis
+	ldr	r6, =0x0
+	mcr	p15, 0, r6, c7, c1, 6
 
-	ldr	r6, =iram_tbl_phys_addr
+	ldr	r6, =iram_tlb_phys_addr
 	ldr	r7, [r6]
 
 	dsb
@@ -156,45 +188,47 @@
 	write_ttbr1 r7
 	write_ttbr0 r7
 
-	/* Read TTBCR and set PD0=1 */
-	read_ttbcr r6
-	orr	r6, r6, #TTBCR_PD0
-	write_ttbcr r6
+	/* Read TTBCR and set PD0=1, N = 1 */
+	mrc	p15, 0, r6, c2, c0, 2
+	orr	r6, r6, #0x10
+	mcr	p15, 0, r6, c2, c0, 2
 
 	dsb
 	isb
 
 	/* flush the TLB */
-	write_tlbiallis
-	isb
+	ldr	r6, =0x0
+	mcr	p15, 0, r6, c8, c3, 0
 
 	.endm
 
 	.macro	tlb_back_to_ddr
 
-	/* Read TTBCR and set PD0=0 */
-	read_ttbcr r6
-	bic	r6, r6, #TTBCR_PD0
-	write_ttbcr r6
+	/* Read TTBCR and set PD0=0, N = 0 */
+	mrc	p15, 0, r6, c2, c0, 2
+	bic	r6, r6, #0x10
+	mcr	p15, 0, r6, c2, c0, 2
 
 	dsb
 	isb
 
 	/* flush the TLB */
-	write_tlbiallis
+	ldr	r6, =0x0
+	mcr	p15, 0, r6, c8, c3, 0
 
 	/* Enable Branch Prediction, Z bit in SCTLR. */
-	read_sctlr r6
-	orr	r6, r6, #SCTLR_Z
-	write_sctlr r6
+	mrc	p15, 0, r6, c1, c0, 0
+	orr	r6, r6, #0x800
+	mcr	p15, 0, r6, c1, c0, 0
 
 	/* Flush the Branch Target Address Cache (BTAC) */
-	write_bpiallis
+	ldr	r6, =0x0
+	mcr	p15, 0, r6, c7, c1, 6
 
 	/* restore ttbr */
-	ldr	r7, [r0, #PM_INFO_MX7_TTBR1_OFF]
+	ldr	r7, [r0, #PM_INFO_PM_INFO_TTBR1_OFFSET]
 	write_ttbr1 r7
-	ldr	r7, [r0, #PM_INFO_MX7_TTBR0_OFF]
+	ldr	r7, [r0, #PM_INFO_PM_INFO_TTBR0_OFFSET]
 	write_ttbr0 r7
 
 	.endm
@@ -202,7 +236,7 @@
 	/* r10 must be DDRC base address */
 	.macro ddrc_enter_self_refresh
 
-	ldr	r10, [r0, #PM_INFO_MX7_DDRC_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_DDRC_V_OFFSET]
 
 	/* disable port */
 	ldr	r7, =0x0
@@ -257,7 +291,7 @@
 	 * it can avoid the logic of version check in idle
 	 * thread.
 	 */
-	ldr	r10, [r0, #PM_INFO_MX7_IOMUXC_GPR_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_IOMUXC_GPR_V_OFFSET]
 	ldr	r7, =0xf0000
 	str	r7, [r10]
 
@@ -273,8 +307,8 @@
 	.macro ddrc_exit_self_refresh
 
 	cmp	r5, #0x1
-	ldreq	r10, [r0, #PM_INFO_MX7_IOMUXC_GPR_P_OFF]
-	ldrne	r10, [r0, #PM_INFO_MX7_IOMUXC_GPR_V_OFF]
+	ldreq	r10, [r0, #PM_INFO_MX7D_IOMUXC_GPR_P_OFFSET]
+	ldrne	r10, [r0, #PM_INFO_MX7D_IOMUXC_GPR_V_OFFSET]
 
 	ldr	r7, =0x0
 	str	r7, [r10]
@@ -285,8 +319,8 @@
 	bne	13b
 
 	cmp	r5, #0x1
-	ldreq	r10, [r0, #PM_INFO_MX7_DDRC_P_OFF]
-	ldrne	r10, [r0, #PM_INFO_MX7_DDRC_V_OFF]
+	ldreq	r10, [r0, #PM_INFO_MX7D_DDRC_P_OFFSET]
+	ldrne	r10, [r0, #PM_INFO_MX7D_DDRC_V_OFFSET]
 
 	ldr	r7, =0x0
 	str	r7, [r10, #DDRC_DBG1]
@@ -329,13 +363,13 @@
 
 	.macro ccm_enter_idle
 
-	ldr	r10, [r0, #PM_INFO_MX7_ANATOP_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_ANATOP_V_OFFSET]
 
 	/* ungate pfd1 332m for lower axi */
 	ldr	r7, =0x8000
 	str	r7, [r10, #0xc8]
 
-	ldr	r10, [r0, #PM_INFO_MX7_CCM_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_CCM_V_OFFSET]
 
 	/* switch ARM CLK to OSC */
 	ldr	r8, =0x8000
@@ -361,7 +395,7 @@
 	bic	r7, r7, #0x10000000
 	str	r7, [r10, r8]
 
-	ldr	r10, [r0, #PM_INFO_MX7_ANATOP_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_ANATOP_V_OFFSET]
 
 	/* gate pfd1 332m */
 	ldr	r7, =0x8000
@@ -382,8 +416,8 @@
 	.macro ccm_exit_idle
 
 	cmp	r5, #0x1
-	ldreq	r10, [r0, #PM_INFO_MX7_ANATOP_P_OFF]
-	ldrne	r10, [r0, #PM_INFO_MX7_ANATOP_V_OFF]
+	ldreq	r10, [r0, #PM_INFO_MX7D_ANATOP_P_OFFSET]
+	ldrne	r10, [r0, #PM_INFO_MX7D_ANATOP_V_OFFSET]
 
 	/* power up ARM, 480 and DRAM PLL */
 	ldr	r7, =0x1000
@@ -410,8 +444,8 @@
 	str	r7, [r10, #0xb8]
 
 	cmp	r5, #0x1
-	ldreq	r10, [r0, #PM_INFO_MX7_CCM_P_OFF]
-	ldrne	r10, [r0, #PM_INFO_MX7_CCM_V_OFF]
+	ldreq	r10, [r0, #PM_INFO_MX7D_CCM_P_OFFSET]
+	ldrne	r10, [r0, #PM_INFO_MX7D_CCM_V_OFFSET]
 
 	/* switch ARM CLK to PLL */
 	ldr	r8, =0x8000
@@ -438,8 +472,8 @@
 	str	r7, [r10, r8]
 
 	cmp	r5, #0x1
-	ldreq	r10, [r0, #PM_INFO_MX7_ANATOP_P_OFF]
-	ldrne	r10, [r0, #PM_INFO_MX7_ANATOP_V_OFF]
+	ldreq	r10, [r0, #PM_INFO_MX7D_ANATOP_P_OFFSET]
+	ldrne	r10, [r0, #PM_INFO_MX7D_ANATOP_V_OFFSET]
 
 	/* gate pfd1 332m for lower axi */
 	ldr	r7, =0x8000
@@ -449,7 +483,7 @@
 
 	.macro anatop_enter_idle
 
-	ldr	r10, [r0, #PM_INFO_MX7_ANATOP_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_ANATOP_V_OFFSET]
 
 	/* XTAL to RC-OSC switch */
 	ldr	r7, [r10]
@@ -493,8 +527,8 @@
 	.macro anatop_exit_idle
 
 	cmp	r5, #0x1
-	ldreq	r10, [r0, #PM_INFO_MX7_ANATOP_P_OFF]
-	ldrne	r10, [r0, #PM_INFO_MX7_ANATOP_V_OFF]
+	ldreq	r10, [r0, #PM_INFO_MX7D_ANATOP_P_OFFSET]
+	ldrne	r10, [r0, #PM_INFO_MX7D_ANATOP_V_OFFSET]
 
 	/* power on normal bandgap */
 	ldr	r7, [r10, #0x270]
@@ -552,13 +586,14 @@
 
 .extern iram_tlb_phys_addr
 
+	.align 3
 FUNC imx7d_low_power_idle, :
 UNWIND( .fnstart)
 	push	{r0 - r12}
 
 	/* get necessary info from pm_info */
-	ldr	r1, [r0, #PM_INFO_MX7_PBASE_OFF]
-	ldr	r2, [r0, #PM_INFO_MX7_SIZE_OFF]
+	ldr	r1, [r0, #PM_INFO_PBASE_OFFSET]
+	ldr	r2, [r0, #PM_INFO_PM_INFO_SIZE_OFFSET]
 
 	/*
 	 * counting the resume address in iram
@@ -571,15 +606,15 @@ UNWIND( .fnstart)
 	add	r3, r8, r6
 
 	/* r11 is cpu id */
-	read_mpidr r11
+	mrc	p15, 0, r11, c0, c0, 5
 	and	r11, r11, #3
 	cmp	r11, #0x0
-	ldreq	r6, =MX7_SRC_GPR1
-	ldreq	r7, =MX7_SRC_GPR2
-	ldrne	r6, =MX7_SRC_GPR3
-	ldrne	r7, =MX7_SRC_GPR4
+	ldreq	r6, =MX7D_SRC_GPR1
+	ldreq	r7, =MX7D_SRC_GPR2
+	ldrne	r6, =MX7D_SRC_GPR3
+	ldrne	r7, =MX7D_SRC_GPR4
 	/* store physical resume addr and pm_info address. */
-	ldr	r10, [r0, #PM_INFO_MX7_SRC_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_SRC_V_OFFSET]
 	str	r3, [r10, r6]
 	str	r1, [r10, r7]
 
@@ -588,8 +623,8 @@ UNWIND( .fnstart)
 	tlb_set_to_ocram
 
 	/* check last to sleep */
-	ldr	r6, [r0, #PM_INFO_MX7_NUM_ONLINE_CPUS_OFF]
-	ldr	r7, [r0, #PM_INFO_MX7_NUM_LPI_CPUS_OFF]
+	ldr	r6, [r0, #PM_INFO_PM_INFO_NUM_ONLINE_CPUS_OFFSET]
+	ldr	r7, [r0, #PM_INFO_PM_INFO_NUM_LPI_CPUS_OFFSET]
 	cmp	r6, r7
 	bne	lpi_enter_done
 
@@ -597,22 +632,22 @@ UNWIND( .fnstart)
 	ccm_enter_idle
 	anatop_enter_idle
 
-	ldr	r10, [r0, #PM_INFO_MX7_GIC_DIST_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_GIC_DIST_V_OFFSET]
 	ldr	r7, =0x0
 	ldr	r8, =0x1000
 	str	r7, [r10, r8]
 
-	ldr	r10, [r0, #PM_INFO_MX7_GPC_V_OFF]
-	ldr	r4, [r10, #MX7_GPC_IMR1]
-	ldr	r5, [r10, #MX7_GPC_IMR2]
-	ldr	r6, [r10, #MX7_GPC_IMR3]
-	ldr	r7, [r10, #MX7_GPC_IMR4]
+	ldr	r10, [r0, #PM_INFO_MX7D_GPC_V_OFFSET]
+	ldr	r4, [r10, #MX7D_GPC_IMR1]
+	ldr	r5, [r10, #MX7D_GPC_IMR2]
+	ldr	r6, [r10, #MX7D_GPC_IMR3]
+	ldr	r7, [r10, #MX7D_GPC_IMR4]
 
 	ldr	r8, =0xffffffff
-	str	r8, [r10, #MX7_GPC_IMR1]
-	str	r8, [r10, #MX7_GPC_IMR2]
-	str	r8, [r10, #MX7_GPC_IMR3]
-	str	r8, [r10, #MX7_GPC_IMR4]
+	str	r8, [r10, #MX7D_GPC_IMR1]
+	str	r8, [r10, #MX7D_GPC_IMR2]
+	str	r8, [r10, #MX7D_GPC_IMR3]
+	str	r8, [r10, #MX7D_GPC_IMR4]
 
 	/*
 	 * enable the RBC bypass counter here
@@ -632,10 +667,10 @@ UNWIND( .fnstart)
 	str	r8, [r10, #0x14]
 
 	/* unmask all the GPC interrupts. */
-	str	r4, [r10, #MX7_GPC_IMR1]
-	str	r5, [r10, #MX7_GPC_IMR2]
-	str	r6, [r10, #MX7_GPC_IMR3]
-	str	r7, [r10, #MX7_GPC_IMR4]
+	str	r4, [r10, #MX7D_GPC_IMR1]
+	str	r5, [r10, #MX7D_GPC_IMR2]
+	str	r6, [r10, #MX7D_GPC_IMR3]
+	str	r7, [r10, #MX7D_GPC_IMR4]
 
 	/*
 	 * now delay for a short while (30usec)
@@ -656,13 +691,42 @@ lpi_enter_done:
 	imx_pen_unlock
 
         wfi
-	isb
+
+	nop
+	nop
+	nop
+	nop
+	nop
+
+	nop
+	nop
+	nop
+	nop
+	nop
+
+	nop
+	nop
+	nop
+	nop
+	nop
+
+	nop
+	nop
+	nop
+	nop
+	nop
+
+	nop
+	nop
+	nop
+	nop
+	nop
 
 	imx_pen_lock
 
 	/* check first to wake */
-	ldr	r6, [r0, #PM_INFO_MX7_NUM_ONLINE_CPUS_OFF]
-	ldr	r7, [r0, #PM_INFO_MX7_NUM_LPI_CPUS_OFF]
+	ldr	r6, [r0, #PM_INFO_PM_INFO_NUM_ONLINE_CPUS_OFFSET]
+	ldr	r7, [r0, #PM_INFO_PM_INFO_NUM_LPI_CPUS_OFFSET]
 	cmp	r6, r7
 	bne	skip_lpi_flow
 
@@ -671,7 +735,7 @@ lpi_enter_done:
 	ccm_exit_idle
 	ddrc_exit_self_refresh
 
-	ldr	r10, [r0, #PM_INFO_MX7_GIC_DIST_V_OFF]
+	ldr	r10, [r0, #PM_INFO_MX7D_GIC_DIST_V_OFFSET]
 	ldr	r7, =0x3
 	ldr	r8, =0x1000
 	str	r7, [r10, r8]
@@ -679,18 +743,18 @@ skip_lpi_flow:
 
 	tlb_back_to_ddr
 
-	/* TODO: handle non-SMP kernel */
+	/* Note: How to handle non-SMP kernel? */
 	/* Turn on SMP bit. */
-	read_actlr r7
-	orr	r7, r7, #ACTLR_SMP
-	write_actlr r7
+	mrc	p15, 0, r7, c1, c0, 1
+	orr	r7, r7, #0x40
+	mcr	p15, 0, r7, c1, c0, 1
 
 	isb
 
 	/* enable d-cache */
-	read_sctlr r7
-	orr	r7, r7, #SCTLR_C
-	write_sctlr r7
+	mrc	p15, 0, r7, c1, c0, 0
+	orr	r7, r7, #(1 << 2)
+	mcr	p15, 0, r7, c1, c0, 0
 	dsb
 	isb
 
@@ -700,20 +764,29 @@ skip_lpi_flow:
 
 wakeup:
 	/* invalidate L1 I-cache first */
-	write_iciallu
-	write_bpiall
+	mov	r1, #0x0
+	mcr	p15, 0, r1, c7, c5, 0
+	mcr	p15, 0, r1, c7, c5, 0
+	mcr	p15, 0, r1, c7, c5, 6
 	/* enable the Icache and branch prediction */
-	mov	r1, #(SCTLR_I | SCTLR_Z)
-	write_sctlr r1
+	mov	r1, #0x1800
+	mcr	p15, 0, r1, c1, c0, 0
 	isb
 
 	/* switch monitor mode */
-	cps	#CPSR_MODE_MON
+	mov	r3, #0x16
+	mov	r4, #((1 << 6) | (1 << 7))
+	orr	r3, r3, r4
+	msr	cpsr, r3
+	nop
+	nop
+	nop
+
 
 	imx_pen_lock
 	/* check first to wake */
-	ldr	r6, [r0, #PM_INFO_MX7_NUM_ONLINE_CPUS_OFF]
-	ldr	r7, [r0, #PM_INFO_MX7_NUM_LPI_CPUS_OFF]
+	ldr	r6, [r0, #PM_INFO_PM_INFO_NUM_ONLINE_CPUS_OFFSET]
+	ldr	r7, [r0, #PM_INFO_PM_INFO_NUM_LPI_CPUS_OFFSET]
 	cmp	r6, r7
 	bne	wakeup_skip_lpi_flow
 
@@ -724,7 +797,7 @@ wakeup:
 wakeup_skip_lpi_flow:
 
 	/* get physical resume address from pm_info. */
-	ldr	lr, [r0, #PM_INFO_MX7_RESUME_ADDR_OFF]
+	ldr	lr, [r0, #PM_INFO_RESUME_ADDR_OFFSET]
 
 	/* Restore registers */
 	bx	lr
@@ -738,33 +811,35 @@ END_FUNC imx7d_low_power_idle
  */
 FUNC v7_cpu_resume, :
 UNWIND( .fnstart)
-	mov     r0, #0	@ ; write the cache size selection register to be
-	write_csselr r0	@ ; sure we address the data cache
-	isb		@ ; isb to sync the change to the cachesizeid reg
+	mov	r0, #0
+	mcr	p15, 2, r0, c0, c0, 0
+	isb
 
 _inv_dcache_off:
-	mov     r0, #0	@ ; set way number to 0
-_inv_nextway:
-	mov     r1, #0	@ ; set line number (=index) to 0
-_inv_nextline:
-	orr     r2, r0, r1	@ ; construct way/index value
-	write_dcisw r2 @ ; invalidate data or unified cache line by set/way
-	add     r1, r1, #1 << LINE_FIELD_OFFSET	@ ; increment the index
-	cmp     r1, #1 << LINE_FIELD_OVERFLOW	@ ; overflow out of set field
-	bne     _inv_nextline
-	add     r0, r0, #1 << WAY_FIELD_OFFSET	@ ; increment the way number
-	cmp     r0, #0				@ ; overflow out of way field
-	bne     _inv_nextway
+	mov	r0, #0
+_inv_nextWay:
+	mov     r1, #0
+_inv_nextLine:
+	orr	r2, r0, r1
+	mcr	p15, 0, r2, c7, c6, 2
+	add	r1, r1, #1 << LINE_FIELD_OFFSET
+	cmp	r1, #1 << LINE_FIELD_OVERFLOW
+	bne	_inv_nextLine
+	add	r0, r0, #1 << WAY_FIELD_OFFSET
+	cmp	r0, #0
+	bne	_inv_nextWay
 
-	dsb					@ ; synchronise
+	dsb
+	nop
+	nop
 
 	/*
-	 * no stack, scratch r0-r3
-	 * TODO: need to use specific configure, but not plat_xxx.
-	 * because plat_xx maybe changed in future, we can not rely on it.
-	 * need handle sp carefully.
+	 * No stack, scratch r0-r3
+	 * TODO: Need to use specific configure, but not plat_xxx.
+	 * Because plat_xx maybe changed in future, we can not rely on it.
+	 * Need handle sp carefully.
 	 */
-	blx plat_cpu_reset_early
+	blx	plat_cpu_reset_early
 
 	b	sm_pm_cpu_resume
 UNWIND( .fnend)

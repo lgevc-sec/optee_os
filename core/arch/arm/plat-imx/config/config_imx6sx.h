@@ -2,7 +2,6 @@
 /*
  * Copyright 2017 NXP
  *
- * Peng Fan <peng.fan@nxp.com>
  */
 
 #ifndef __CONFIG_IMX6SX_H
@@ -17,6 +16,35 @@
 #endif
 
 #define DRAM0_SIZE		CFG_DDR_SIZE
+
+/* Location of trusted dram */
+#define TZDRAM_BASE		(DRAM0_BASE - 32 * 1024 * 1024 + CFG_DDR_SIZE)
+#define TZDRAM_SIZE		(30 * 1024 * 1024)
+
+/* Full GlobalPlatform test suite requires CFG_SHMEM_SIZE to be at least 2MB */
+#define CFG_SHMEM_START		(TZDRAM_BASE + TZDRAM_SIZE)
+#define CFG_SHMEM_SIZE		0x200000
+
+#define CFG_TEE_RAM_VA_SIZE	(1024 * 1024)
+
+/*
+ * Everything is in TZDRAM.
+ * +------------------+
+ * |        | TEE_RAM |
+ * + TZDRAM +---------+
+ * |        | TA_RAM  |
+ * +--------+---------+
+ */
+#define CFG_TEE_RAM_PH_SIZE     CFG_TEE_RAM_VA_SIZE
+#define CFG_TEE_RAM_START	TZDRAM_BASE
+#define CFG_TA_RAM_START	ROUNDUP((TZDRAM_BASE + CFG_TEE_RAM_VA_SIZE), \
+					CORE_MMU_DEVICE_SIZE)
+#define CFG_TA_RAM_SIZE		ROUNDDOWN((TZDRAM_SIZE - CFG_TEE_RAM_VA_SIZE), \
+					  CORE_MMU_DEVICE_SIZE)
+
+#ifndef CFG_TEE_LOAD_ADDR
+#define CFG_TEE_LOAD_ADDR	CFG_TEE_RAM_START
+#endif
 
 #define CONSOLE_UART_BASE	(CFG_UART_BASE)
 
@@ -39,12 +67,13 @@
  * bit[2:0]:2 - 3 cycle of setup latency
  */
 #ifndef PL310_DATA_RAM_CTRL_INIT
-#define PL310_DATA_RAM_CTRL_INIT	0x00000232
+#define PL310_DATA_RAM_CTRL_INIT	0x00000132
 #endif
 
 /*
  * PL310 Auxiliary Control Register
  *
+ * Early BRESP enabled (bit31=1)
  * I/Dcache prefetch enabled (bit29:28=2b11)
  * NS can access interrupts (bit27=1)
  * NS can lockown cache lines (bit26=1)
@@ -58,20 +87,20 @@
  * - 16-way associciativity (bit16=1)
  * Store buffer device limitation enabled (bit11=1)
  * Cacheable accesses have high prio (bit10=0)
- * Full Line Zero (FLZ) disabled (bit0=0)
+ * Full Line Zero (FLZ) enabled (bit0=1)
  */
-#define PL310_AUX_CTRL_INIT		0x3C430800
+#define PL310_AUX_CTRL_INIT		0x7E430001
 
 /*
  * PL310 Prefetch Control Register
  *
- * Double linefill disabled (bit30=0)
+ * Double linefill enabled (bit30=1)
  * I/D prefetch enabled (bit29:28=2b11)
- * Prefetch drop enabled (bit24=1)
+ * Prefetch drop disabled (bit24=0)
  * Incr double linefill disable (bit23=0)
- * Prefetch offset = 7 (bit4:0)
+ * Prefetch offset = 0xF (bit4:0)
  */
-#define PL310_PREFETCH_CTRL_INIT	0x31000007
+#define PL310_PREFETCH_CTRL_INIT	0x7000000F
 
 /*
  * PL310 Power Register
