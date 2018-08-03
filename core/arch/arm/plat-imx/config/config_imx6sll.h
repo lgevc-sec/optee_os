@@ -19,34 +19,6 @@
 
 #define CFG_PUB_RAM_SIZE	(2 * 1024 * 1024)
 
-/* Location of trusted dram */
-#define TZDRAM_BASE		(DRAM0_BASE - 32 * 1024 * 1024 + CFG_DDR_SIZE)
-#define TZDRAM_SIZE		(30 * 1024 * 1024)
-
-#define CFG_SHMEM_START		(TZDRAM_BASE + TZDRAM_SIZE)
-
-/* Full GlobalPlatform test suite requires CFG_SHMEM_SIZE to be at least 2MB */
-#define CFG_SHMEM_SIZE		CFG_PUB_RAM_SIZE
-
-/*
- * Everything is in TZDRAM.
- * +------------------+
- * |        | TEE_RAM |
- * + TZDRAM +---------+
- * |        | TA_RAM  |
- * +--------+---------+
- */
-#define CFG_TEE_RAM_VA_SIZE	(1024 * 1024)
-#define CFG_TEE_RAM_PH_SIZE	CFG_TEE_RAM_VA_SIZE
-#define CFG_TEE_RAM_START	TZDRAM_BASE
-#define CFG_TA_RAM_START	ROUNDUP((TZDRAM_BASE + CFG_TEE_RAM_VA_SIZE), \
-					CORE_MMU_DEVICE_SIZE)
-#define CFG_TA_RAM_SIZE		ROUNDDOWN((TZDRAM_SIZE - CFG_TEE_RAM_VA_SIZE), \
-					  CORE_MMU_DEVICE_SIZE)
-#ifndef CFG_TEE_LOAD_ADDR
-#define CFG_TEE_LOAD_ADDR	CFG_TEE_RAM_START
-#endif
-
 #define CONSOLE_UART_BASE	(UART1_BASE)
 
 /*

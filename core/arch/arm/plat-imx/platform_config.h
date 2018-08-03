@@ -11,6 +11,7 @@
 #ifndef PLATFORM_CONFIG_H
 #define PLATFORM_CONFIG_H
 
+#include <mm/generic_ram_layout.h>
 #include <imx-regs.h>
 
 #define STACK_ALIGNMENT			64
