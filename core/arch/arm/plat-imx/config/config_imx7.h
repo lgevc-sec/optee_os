@@ -2,7 +2,6 @@
 /*
  * Copyright 2017 NXP
  *
- * Peng Fan <peng.fan@nxp.com>
  */
 
 #ifndef CFG_UART_BASE

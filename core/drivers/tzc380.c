@@ -1,31 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
  * Copyright 2017 NXP
- * All rights reserved.
  *
- * Peng Fan <peng.fan@nxp.com>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <assert.h>
@@ -170,7 +146,7 @@ static uint32_t addr_high(vaddr_t addr __maybe_unused)
  * `tzc_configure_region` is used to program regions into the TrustZone
  * controller.
  */
-void tzc_configure_region(uint8_t region, vaddr_t region_base, uint32_t attr)
+void tzc_configure_region(uint8_t region, vaddr_t region_base, size_t attr)
 {
 	assert(tzc.base);
 
@@ -225,7 +201,14 @@ void tzc_dump_state(void)
 	DMSG("enter");
 	DMSG("security_inversion_en %x\n",
 	     read32(tzc.base + SECURITY_INV_EN_OFF));
-	for (n = 0; n <= REGION_MAX; n++) {
+
+
+	DMSG("\n");
+	DMSG("default security (region 0)");
+	temp_32reg = tzc_read_region_attributes(tzc.base, 0);
+	DMSG("region sp: %x", temp_32reg >> TZC_ATTR_SP_SHIFT);
+
+	for (n = 1; n <= REGION_MAX; n++) {
 		temp_32reg = tzc_read_region_attributes(tzc.base, n);
 		if (!(temp_32reg & TZC_ATTR_REGION_EN_MASK))
 			continue;
@@ -239,6 +222,8 @@ void tzc_dump_state(void)
 		DMSG("region sp: %x", temp_32reg >> TZC_ATTR_SP_SHIFT);
 		DMSG("region size: %x\n", (temp_32reg & TZC_REGION_SIZE_MASK) >>
 				TZC_REGION_SIZE_SHIFT);
+		DMSG("region dis: %x\n", (temp_32reg & TZC_SUBREGION_DIS_MASK) >>
+				TZC_SUBREGION_DIS_SHIFT);
 	}
 	DMSG("exit");
 }

@@ -1,3 +1,5 @@
+subdirs-$(CFG_IMX_CAAM) += caam
+
 srcs-$(CFG_CDNS_UART) += cdns_uart.c
 srcs-$(CFG_PL011) += pl011.c
 srcs-$(CFG_TZC400) += tzc400.c
@@ -9,6 +11,7 @@ srcs-$(CFG_8250_UART) += serial8250_uart.c
 srcs-$(CFG_16550_UART) += ns16550.c
 srcs-$(CFG_IMX_SNVS) += imx_snvs.c
 srcs-$(CFG_IMX_UART) += imx_uart.c
+srcs-$(CFG_IMX_LPUART) += imx_lpuart.c
 srcs-$(CFG_IMX_WDOG) += imx_wdog.c
 cflags-imx_wdog.c-y += -Wno-suggest-attribute=noreturn
 srcs-$(CFG_SPRD_UART) += sprd_uart.c
