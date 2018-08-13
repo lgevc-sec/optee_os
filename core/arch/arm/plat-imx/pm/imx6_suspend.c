@@ -4,9 +4,9 @@
  *
  */
 #include <arm.h>
-#include <asm-defines.h>
 #include <console.h>
 #include <drivers/imx_uart.h>
+#include <generated/asm-defines.h>
 #include <io.h>
 #include <imx.h>
 #include <imx_pm.h>
