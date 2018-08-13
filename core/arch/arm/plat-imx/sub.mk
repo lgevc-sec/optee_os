@@ -21,6 +21,7 @@ srcs-$(CFG_MX6SLL) += pm/cpuidle-imx6sll.c pm/imx6sll_lowpower_idle.S
 srcs-$(CFG_MX7) += pm/pm-imx7.c pm/psci-suspend-imx7.S pm/imx7_suspend.c pm/cpuidle-imx7d.c pm/imx7d_low_power_idle.S
 srcs-$(CFG_MX7ULP) += pm/pm-imx7ulp.c pm/psci-suspend-imx7ulp.S pm/imx7ulp_suspend.c
 $(call force,CFG_PM_ARM32,y)
+asm-defines-y += imx_pm_asm_defines.c
 endif
 
 cflags-pm/psci.c-y += -Wno-suggest-attribute=noreturn
